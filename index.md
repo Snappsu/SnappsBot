@@ -3,7 +3,7 @@
 <div id="container">
     <img src="https://github.com/Snappsu/snappsbot/blob/master/SnappsBotIcon.png?raw=true" width="250" height="250" />
 </div>
-Hello! This is me!
+Hello! This is me!<br>
 To use my commands, all you have to do is call my name!
 
 ## What can SnappsBot do?
