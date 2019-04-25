@@ -30,14 +30,17 @@ These commands will prove some sort of useful information (hopefully).
 | `tell me about` | [Search Term] | Searches Wikipedia for the supplied search term and returns a link to the first result. | `tell me about yourself` will run the help command. | `tell me about dogs` |
 
 ### JIRA Commands
-With these commands, I will pull information from the JIRA API and present them in Slack.
+With these commands, I will pull information from the JIRA API and present them in Slack. All of these commands start with `jira` (after metioning me, of course).
 
 | Command | Parameters | Description | Notes | Example |
 |-|-|-|-|-|
 | `sum` | [JIRA issue key] | Returns a summary of the issue provided. | N/A | `jira sum nodes-717` |
+| `search` | [JIRA issue key] | Returns a summary of the issue provided. | N/A | `jira sum nodes-717` |
+
+
 
 ### Debug Commands
-These commands are for getting info about the me.
+These commands are for getting info about the me. Just like the JIRA commands, these start wtih `debug`.
 
 | Command | Parameters | Description | Notes | Example |
 |-|-|-|-|-|
