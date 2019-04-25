@@ -228,8 +228,12 @@ def handle_command(command, channel):
                 }
                 R = S.get(url=URL, headers=HEADER)
                 DATA = R.json()
-                if 'priority' not in  DATA['fields']:
+                if 'priority' not in DATA['fields']:
+                    DATA['fields']['priority'] = None
+                if DATA['fields']['priority'] == None:
                     DATA['fields']['priority']= {'name':"N/A"}
+                if DATA['fields']['assignee'] == None:
+                    DATA['fields']['assignee']= {'name':"Unassigned",'emailAddress':'N/A'}
                 if DATA:
                     slack_client.api_call(
                         "chat.postMessage",
@@ -263,14 +267,19 @@ def handle_command(command, channel):
                                     {
                                         "type": "mrkdwn",
                                         "text": "*Type:*\n"+DATA['fields']['issuetype']['name']+""
-                                    },                                {
-                                        "type": "mrkdwn",
-                                        "text": "*Priority:*\n"+DATA['fields']['priority']['name']+""
-                                    },
+                                    },                                
                                     {
                                         "type": "mrkdwn",
                                         "text": "*Assignee:*\n"+DATA['fields']['assignee']['name']+" <mailto:"+DATA['fields']['assignee']['emailAddress']+"|[✉]>"
                                     },
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": "*Reporter:*\n"+DATA['fields']['reporter']['name']+" <mailto:"+DATA['fields']['reporter']['emailAddress']+"|[✉]>"
+                                    },                                    
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": "*Priority:*\n"+DATA['fields']['priority']['name']+""
+                                    },                                    
                                     {
                                         "type": "mrkdwn",
                                         "text": "*Component(s):*\n<"+DATA['fields']['components'][0]['self']+"|"+DATA['fields']['components'][0]['name']+">"
@@ -293,7 +302,66 @@ def handle_command(command, channel):
             except ValueError:
                 print ("Error with command, the issue probably wasn't found")
                 response = "I couldn't find anything, sorry!"
-
+        if temp.startswith("search"):
+            temp = command.lstrip(temp[0:6]) # removes "search " from the front of the temp
+            terms = re.findall("([A-z]\w+\s*=\s*[A-z]\w+(?:\.\w+)*)", temp)
+            query = ""
+            i = 0
+            for x in terms:
+                i += 1
+                query += x
+                if i < len(terms):
+                    query += " AND "
+                print(query)
+            query = query.replace(" ", "%20")
+            query = query.replace("=", "%3D")
+            S = requests.Session()
+            URL = "https://jira.belkin.com/rest/api/2/search/?jql=" +query+ "&startAt=0&maxResults=10&fields=summary"
+            HEADER = {
+                'Authorization':JiraBotKey,
+                'Content-Type':"application/json", 
+            }
+            R = S.get(url=URL, headers=HEADER)
+            DATA = R.json()
+            BLOCKS=[
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "I've searched through JIRA and these are what I found."
+                            }
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Total Results:* " + str(DATA['total']) + " | *Showing:* " + str(DATA['maxResults']) +""
+                                }
+                            ]
+                        }
+                    ]
+            total = DATA['maxResults']
+            if total > DATA['total']:
+                total = DATA['total']
+            for i in range(total):
+                BLOCKS.append({
+                                "type": "divider"
+                            })
+                BLOCKS.append({
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": "<https://jira.belkin.com/browse/" + DATA['issues'][i]['key'] + "|" + DATA['issues'][i]['key'] + ">\n" + DATA['issues'][i]['fields']['summary']+""
+                                }
+                            })
+            slack_client.api_call(
+                        "chat.postMessage",
+                        channel=channel,
+                        text="Here we go.",
+                        blocks=BLOCKS
+                    )
+            response = "I hope that helps!"
     # Debug Commands
     if command.lower().startswith("debug"):
             # Uptime command
