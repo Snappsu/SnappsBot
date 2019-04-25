@@ -35,7 +35,7 @@ With these commands, I will pull information from the JIRA API and present them 
 | Command | Parameters | Description | Notes | Example |
 |-|-|-|-|-|
 | `sum` | [JIRA issue key] | Returns a summary of the issue provided. | N/A | `jira sum nodes-717` |
-| `search` | [JIRA issue key] | Returns a summary of the issue provided. | N/A | `jira sum nodes-717` |
+| `search` | [JQL Statements] | Uses JQL to search for problems on JIRA. | If a keyword has a space in it, use quotes. | `jira search project=WEMO status=Closed` |
 
 
 
