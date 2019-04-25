@@ -74,25 +74,25 @@ def findJiraProject(text, channel):
                     i += 1 
 
     return None
-
 def parse_bot_commands(slack_events):
     """
         Parses a list of events coming from the Slack RTM API to find bot commands.
         If a bot command is found, this function returns a tuple of command and channel.
         If its not found, then this function returns None, None.
     """
+
     for event in slack_events:
+        print(event)
         if event["type"] == "message" and not "subtype" in event:
-            print(event["text"])
             # if bot is mentioned 
-            user_id, message = parse_direct_mention(event["text"])
+            user_id, message, ts = parse_direct_mention(event["text"])
             if user_id == SnappsBot_id:
                 print("I was mentioned by "+ event["user"] +" in channel " + event["channel"]) # for logging
                 print("Full message: " + event["text"]) # For logging
                 if event["text"] == ("<@"+user_id+">"):
                     slack_client.api_call("chat.postMessage",channel=event["channel"], text=WhatIsSnappsBot())
                 else:
-                    return message, event["channel"]
+                    return message, event["channel"], event["ts"]
             elif str(user_id) not in event["text"]: 
                 #search for Jira Project
                 findJiraProject(event["text"],event["channel"])
@@ -106,11 +106,11 @@ def parse_bot_commands(slack_events):
                     initial_comment='Good job!',
                     file=io.BytesIO(f.read())
                     )
-                return None, None
-    return None, None
+                return None, None, None
+    return None, None, None
 
 def WhatIsSnappsBot():
-    return "hek"
+    return "Oh hey, that's me!"
 
 def parse_direct_mention(message_text):
     """
@@ -119,9 +119,9 @@ def parse_direct_mention(message_text):
     """
     matches = re.search(MENTION_REGEX, message_text)
     # the first group contains the username, the second group contains the remaining message
-    return (matches.group(1), matches.group(2).strip()) if matches else (None, None)
+    return (matches.group(1), matches.group(2).strip(), None) if matches else (None, None, None)
 
-def handle_command(command, channel):
+def handle_command(command, channel, ts):
     print("Command: " + command) # For logging
     """
         Executes bot command if the command is known
@@ -358,10 +358,11 @@ def handle_command(command, channel):
             slack_client.api_call(
                         "chat.postMessage",
                         channel=channel,
-                        text="Here we go.",
+                        thread_ts =ts,
+                        text="Search complete!",
                         blocks=BLOCKS
                     )
-            response = "I hope that helps!"
+            response = "Done! Check the replies."
     # Debug Commands
     if command.lower().startswith("debug"):
             # Uptime command
@@ -381,9 +382,9 @@ if __name__ == "__main__":
         # Read bot's user ID by calling Web API method `auth.test`
         SnappsBot_id = slack_client.api_call("auth.test")["user_id"]
         while True: # while true loop, keeps bot running
-            command, channel = parse_bot_commands(slack_client.rtm_read())
+            command, channel, ts = parse_bot_commands(slack_client.rtm_read())
             if command:
-                handle_command(command, channel)
+                handle_command(command, channel, ts)
             time.sleep(RTM_READ_DELAY)
     else:
         print("Connection failed. Exception traceback printed above.")
