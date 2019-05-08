@@ -14,6 +14,8 @@ from slackclient import SlackClient
 SlackBotKey = open("keys/SlackBotKey.txt", "r").read()
 UnsplashBotKey = open("keys/UnsplashBotKey.txt", "r").read()
 JiraBotKey = open("keys/JiraBotKey.txt", "r").read()
+SplunkUsername = open("keys/SplunkUsername.txt", "r").read()
+SplunkPassword = open("keys/SplunkPassword.txt", "r").read()
 slack_client = SlackClient(SlackBotKey)
 # starterbot's user ID in Slack: value is assigned after the bot starts up
 SnappsBot_id = None
@@ -28,17 +30,36 @@ if JIRA_PROJECT_LIST == []:
         S = requests.Session()
         URL = "https://jira.belkin.com/rest/api/2/project/"
         HEADER = {
-        'Authorization':JiraBotKey,
-        'Content-Type':"application/json", 
         }
         R = S.get(url=URL, headers=HEADER)
         DATA = R.json()
         for ndx, member in enumerate(DATA):
             JIRA_PROJECT_LIST.append(DATA[ndx]['key'].lower())
     except:
-        print("Can't connect to JIRA")
+        print("Can't connect to Jira; related commands disabled.")
 print(JIRA_PROJECT_LIST) 
-startTime = time.time()
+
+def getSplunkSession():
+    try:
+        S = requests.Session()
+        URL = "https://belkin.splunkcloud.com:8089/services/auth/login/"
+        HEADERS = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        }
+        PAYLOAD = {
+        'username':SplunkUsername,
+        'password':SplunkPassword,
+        }
+        PARAMS = {
+        'output_mode':"json",
+        }
+        R = S.get(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False)
+        DATA = R.json()
+        print(DATA)
+        return "OK"
+    except:
+        print("Can't connect to Splunk; related commands disabled.")
+        return "N/A"
 
 def dogFacts():
     dogFacts = urllib.request.urlopen("https://raw.githubusercontent.com/Snappsu/SnappsBot/master/dogFacts.txt") # A list of dog facts
@@ -376,6 +397,10 @@ def handle_command(command, channel, ts):
         text=response or default_response,
         unfurl_media = "true",
     )
+
+startTime = time.time()
+SplunkSession = getSplunkSession()
+
 if __name__ == "__main__": 
     if slack_client.rtm_connect(with_team_state=False): # checks if bot connects to slack
         print("SnappsBot connected and running!")
