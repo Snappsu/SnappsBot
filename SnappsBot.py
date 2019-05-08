@@ -40,6 +40,7 @@ if JIRA_PROJECT_LIST == []:
 print(JIRA_PROJECT_LIST) 
 
 def getSplunkSession():
+    print("Fetching session key...")
     try:
         S = requests.Session()
         URL = "https://belkin.splunkcloud.com:8089/services/auth/login/"
@@ -53,10 +54,10 @@ def getSplunkSession():
         PARAMS = {
         'output_mode':"json",
         }
-        R = S.get(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False)
+        R = S.post(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False)
         DATA = R.json()
-        print(DATA)
-        return "OK"
+        print("Session key fetched: "+DATA['sessionKey'])
+        return DATA['sessionKey']
     except:
         print("Can't connect to Splunk; related commands disabled.")
         return "N/A"
@@ -377,18 +378,80 @@ def handle_command(command, channel, ts):
                                 }
                             })
             slack_client.api_call(
-                        "chat.postMessage",
-                        channel=channel,
-                        thread_ts =ts,
-                        text="Search complete!",
-                        blocks=BLOCKS
-                    )
+                "chat.postMessage",
+                channel=channel,
+                thread_ts =ts,
+                text="Search complete!",
+                blocks=BLOCKS
+            )
             response = "Done! Check the replies."
     # Debug Commands
     if command.lower().startswith("debug"):
             # Uptime command
         if "uptime" in command: 
             response = "I've been up for about " + str(round(time.time() - startTime)) + " seconds!" # Subtracts current time by start time.
+    
+    # Splunk Commands
+    if command.lower().startswith("splunk"):
+            # Uptime command
+        if "search" in command: 
+            try:
+                S = requests.Session()
+                URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"
+                HEADERS = {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": "Splunk "+getSplunkSession(),
+                }
+                PAYLOAD = {
+                'search':'search index=mint sourcetype="mint:event" earliest=-30m@m',
+                }
+                PARAMS = {
+                'output_mode':"json",
+                }
+                R = S.post(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False)
+                DATA = R.json()
+                print(DATA)
+                print(DATA['sid'])
+                try:
+                    S = requests.Session()
+                    URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"+str(DATA['sid'])
+                    HEADERS = {
+                    "Authorization": "Splunk "+getSplunkSession(),
+                    }
+                    PARAMS = {
+                    'output_mode':"json",
+                    }
+
+                    R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
+                    DATA2 = R.json()
+                    while DATA2['entry'][0]['content']['dispatchState'] != "DONE":
+                        time.sleep(.5)
+                        R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
+                        DATA2 = R.json()
+                    print(DATA2)
+                    BLOCKS =[
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "*Total hits:* "+str(DATA2['entry'][0]['content']['resultCount'])
+                            }
+                        }]
+                    slack_client.api_call(
+                        "chat.postMessage",
+                        channel= channel,
+                        thread_ts = ts,
+                        text="Search complete!",
+                        blocks=BLOCKS
+                    )
+                    response = "Splunk search created: check the thread."
+                except:
+                    print("No response from Splunk.")
+                    response = "No response from Splunk. :<"
+            except:
+                print("Can't connect to Splunk.")
+                response = "Can't connect to Splunk. :<"
+            
     
     # Sends the response back to the channel
     slack_client.api_call(
@@ -399,7 +462,6 @@ def handle_command(command, channel, ts):
     )
 
 startTime = time.time()
-SplunkSession = getSplunkSession()
 
 if __name__ == "__main__": 
     if slack_client.rtm_connect(with_team_state=False): # checks if bot connects to slack
