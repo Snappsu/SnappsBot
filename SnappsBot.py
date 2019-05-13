@@ -5,6 +5,7 @@ import re
 import requests
 import random
 import readline
+import csv
 import urllib.request
 import urllib3
 from PIL import Image
@@ -96,6 +97,7 @@ def findJiraProject(text, channel):
                     i += 1 
 
     return None
+
 def parse_bot_commands(slack_events):
     """
         Parses a list of events coming from the Slack RTM API to find bot commands.
@@ -104,7 +106,6 @@ def parse_bot_commands(slack_events):
     """
 
     for event in slack_events:
-        print(event)
         if event["type"] == "message" and not "subtype" in event:
             # if bot is mentioned 
             user_id, message, ts = parse_direct_mention(event["text"])
@@ -157,19 +158,14 @@ def handle_command(command, channel, ts):
     # -=== Add Commands Here ===- 
 
     # Silly Commands
-
     if command.lower().startswith("do nothing"):
         response = "On it!"
-
     if command.lower().startswith("do something"):
         response = "I'll try my best!"
-
     if command.lower().startswith("sit"):
         response = "_sits_"
-
     if command.lower().startswith("speak"):
         response = dogFacts() # gets random dog fact from dogFacts
-
     if command.lower() ==  "take a selfie" or command.lower() ==  "selfie":
         slack_client.api_call("chat.postMessage",channel=channel, text="Give me a sec...")
         S = requests.Session()
@@ -203,14 +199,12 @@ def handle_command(command, channel, ts):
             response = "Sorry, I'm not really feeling it at the moment."
 
     # Informative Commands
-        # Help Commands
     if command.lower().startswith("help"):
         response = "Here's my resume: https://snappsu.github.io/SnappsBot/" # returns github website
 
         # Wikipedia Search
     if command.lower().startswith("tell me about yourself"):
-        response = "Here's my resume: https://snappsu.github.io/SnappsBot/" # returns github website
-        
+        response = "Here's my resume: https://snappsu.github.io/SnappsBot/" # returns github website    
     elif command.lower().startswith("tell me about"):
         try:
             # Uses the wikipedia api to return the first search result of the query.
@@ -233,7 +227,6 @@ def handle_command(command, channel, ts):
                     response = "I couldn't find anything, sorry! Try something more specific."
         except ValueError:
             response = "I couldn't find anything, sorry!"
-
     # Jira Commands
     if command.lower().startswith("jira"):
         temp = command.lstrip(command[0:5]) # removes "jira " from the front of the command
@@ -384,13 +377,13 @@ def handle_command(command, channel, ts):
                 text="Search complete!",
                 blocks=BLOCKS
             )
+            print(BLOCKS)
             response = "Done! Check the replies."
     # Debug Commands
     if command.lower().startswith("debug"):
             # Uptime command
         if "uptime" in command: 
             response = "I've been up for about " + str(round(time.time() - startTime)) + " seconds!" # Subtracts current time by start time.
-    
     # Splunk Commands
     if command.lower().startswith("splunk"):
             # Uptime command
@@ -403,16 +396,16 @@ def handle_command(command, channel, ts):
                 "Authorization": "Splunk "+getSplunkSession(),
                 }
                 PAYLOAD = {
-                'search':'search index=mint sourcetype="mint:event" earliest=-30m@m',
+                'search':'| inputlookup bikeshare.csv',
                 }
                 PARAMS = {
                 'output_mode':"json",
                 }
                 R = S.post(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False)
                 DATA = R.json()
-                print(DATA)
-                print(DATA['sid'])
                 try:
+                    maxResult = 5
+                    page = 1
                     S = requests.Session()
                     URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"+str(DATA['sid'])
                     HEADERS = {
@@ -425,26 +418,93 @@ def handle_command(command, channel, ts):
                     R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
                     DATA2 = R.json()
                     while DATA2['entry'][0]['content']['dispatchState'] != "DONE":
-                        time.sleep(.5)
+                        time.sleep(1)
                         R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
                         DATA2 = R.json()
-                    print(DATA2)
-                    BLOCKS =[
-                        {
+                    try:
+                        S = requests.Session()
+                        URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"+str(DATA['sid'])+"/results/"
+                        HEADERS = {
+                        "Authorization": "Splunk "+getSplunkSession(),
+                        }
+                        PARAMS = {
+                        'output_mode':"json",
+                        }
+                        R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
+                        DATA3 = R.json()
+                        BLOCKS =[
+                            {
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": "*Total hits:* "+str(DATA2['entry'][0]['content']['resultCount'])
+                                "text": "Here's what I got from Splunk!\n<https://belkin.splunkcloud.com/en-US/app/search/search?sid="+DATA['sid']+">"
+                                }
+                            },
+                            {
+                            "type": "context",
+                            "elements": [
+                                {
+                                "type": "mrkdwn",
+                                "text": "*Total hits:* "+str(DATA2['entry'][0]['content']['resultCount'])+" | *Page:* "+ str(page) +" ("+str((page-1)*maxResult+1)+"-"+str(maxResult * page)+")"
+                                }
+                                ]
                             }
-                        }]
-                    slack_client.api_call(
-                        "chat.postMessage",
-                        channel= channel,
-                        thread_ts = ts,
-                        text="Search complete!",
-                        blocks=BLOCKS
-                    )
-                    response = "Splunk search created: check the thread."
+                        ]
+                        
+                        for i in range(maxResult):
+                            BLOCKS.append({
+                                "type": "divider"
+                            })
+                            BLOCKS.append({
+                                'type': "section",
+                                'fields': [
+                                    {
+                                    'type': "mrkdwn",
+                                    'text': "*Bike ID:* "+str(DATA3['results'][i]['bike_id'])
+                                    }
+                                ]})
+                            BLOCKS.append({
+                                'type': "section",
+                                'fields': [
+                                    {
+                                    'type': "mrkdwn",
+                                    'text': "*Member Type:* "+str(DATA3['results'][i]['member_type'])
+                                    },
+                                    {
+                                    'type': "mrkdwn",
+                                    'text': "*Start Station:* "+str(DATA3['results'][i]['start_station'])
+                                    },
+                                    {
+                                    'type': "mrkdwn",
+                                    'text': "*Date:* "+str(DATA3['results'][i]['date_wday'])+" at "+str(DATA3['results'][i]['date_hour'])+"00"
+                                    },
+                                    {
+                                    'type': "mrkdwn",
+                                    'text': "*Duration:* "+str(DATA3['results'][i]['duration_ms'])+"ms"
+                                    }                                 
+                                ]})
+                            BLOCKS.append({
+                                "type": "context",
+                                "elements": [
+                                    {
+                                    "type": "plain_text",
+                                    "emoji": True,
+                                    "text": "⏱ Timestamp: "+str(DATA3["results"][i]["timestamp"])+""
+                                    }
+                                ]}) 
+                        try:
+                            slack_client.api_call(
+                            "chat.postMessage",
+                            channel= channel,
+                            thread_ts = ts,
+                            text="Search complete!",
+                            blocks=BLOCKS
+                            )
+                            response = "Splunk search created: check the thread."
+                        except:
+                            response = "Posting failed :<"
+                    except:
+                        response = "Search failed :<"
                 except:
                     print("No response from Splunk.")
                     response = "No response from Splunk. :<"
