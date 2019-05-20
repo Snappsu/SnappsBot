@@ -11,129 +11,132 @@ import urllib3
 from PIL import Image
 from slackclient import SlackClient
 
-# instantiate Slack client
+# KEYS AND PASSWORDS
 SlackBotKey = open("keys/SlackBotKey.txt", "r").read()
 UnsplashBotKey = open("keys/UnsplashBotKey.txt", "r").read()
 JiraBotKey = open("keys/JiraBotKey.txt", "r").read()
 SplunkUsername = open("keys/SplunkUsername.txt", "r").read()
 SplunkPassword = open("keys/SplunkPassword.txt", "r").read()
-slack_client = SlackClient(SlackBotKey)
-# starterbot's user ID in Slack: value is assigned after the bot starts up
-SnappsBot_id = None
 
-# constants
+slack_client = SlackClient(SlackBotKey) # instantiate Slack client
+SnappsBot_id = None # starterbot's user ID in Slack: value is assigned after the bot starts up
+
+# Constants
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 EXAMPLE_COMMAND = "help"
 MENTION_REGEX = "^<@(|[WU].+?)>(.*)"
-JIRA_PROJECT_LIST = []
-if JIRA_PROJECT_LIST == []:
-    try:
+JIRA_PROJECT_LIST = [] 
+if JIRA_PROJECT_LIST == []: # if the list is empty... 
+    try: # try get list from Jira API
         S = requests.Session()
         URL = "https://jira.belkin.com/rest/api/2/project/"
         HEADER = {
-        }
+                'Authorization':JiraBotKey,
+                'Content-Type':"application/json", # request data as json
+            }
         R = S.get(url=URL, headers=HEADER)
-        DATA = R.json()
-        for ndx, member in enumerate(DATA):
-            JIRA_PROJECT_LIST.append(DATA[ndx]['key'].lower())
-    except:
-        print("Can't connect to Jira; related commands disabled.")
-print(JIRA_PROJECT_LIST) 
+        DATA = R.json() # convert response to json format
+        for ndx, member in enumerate(DATA): # for each project in the list... 
+            JIRA_PROJECT_LIST.append(DATA[ndx]['key'].lower()) # add it to the project list
+    except: # if it can't get to the API...
+        print("Can't connect to Jira!")
+print(JIRA_PROJECT_LIST) # for debugging
 
-def getSplunkSession():
+def getSplunkSession(): # gets an authorization key from Splunk
     print("Fetching session key...")
-    try:
+    try:  # try to reach the splunk login API
         S = requests.Session()
         URL = "https://belkin.splunkcloud.com:8089/services/auth/login/"
         HEADERS = {
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type": "application/x-www-form-urlencoded", # send data as unencoded form
         }
         PAYLOAD = {
         'username':SplunkUsername,
         'password':SplunkPassword,
         }
         PARAMS = {
-        'output_mode':"json",
+        'output_mode':"json", # get data as json
         }
         R = S.post(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False)
-        DATA = R.json()
+        DATA = R.json() # convert response to json format
         print("Session key fetched: "+DATA['sessionKey'])
-        return DATA['sessionKey']
-    except:
+        return DATA['sessionKey'] # return the auth ID
+    except: # if it can't get to the API...
         print("Can't connect to Splunk; related commands disabled.")
         return "N/A"
 
-def dogFacts():
-    dogFacts = urllib.request.urlopen("https://raw.githubusercontent.com/Snappsu/SnappsBot/master/dogFacts.txt") # A list of dog facts
-    lines = dogFacts.readlines() #gets each line of the file
-    facts = []
-    totalLines = 0
-    for line in lines:     
-        facts.append(line.decode("utf-8").replace('\n', '')) #appends each line to the end of facts[]
-        totalLines = totalLines + 1 #adds total number of lines
-    randomNum = random.randrange(0, totalLines) #creates a range from 0 to the total number of lines
-    return facts[randomNum] #returns a random fact as a string
+def dogFacts(): # gets a random line from 'dogFacts.txt'
+    dogFacts = urllib.request.urlopen("https://raw.githubusercontent.com/Snappsu/SnappsBot/master/dogFacts.txt") # gets the list of dog facts (hosted on GitHub to get the most recent facts)
+    lines = dogFacts.readlines() # gets each line of the file
+    facts = [] # for holding the facts
+    totalLines = 0 # for iteration and lenght finding
+    for line in lines: # for each line in the file...
+        facts.append(line.decode("utf-8").replace('\n', '')) # appends the line to the end of facts[]
+        totalLines = totalLines + 1 # add one to total number of lines
+    randomNum = random.randrange(0, totalLines) # picks a number from 0 to the total number of lines found
+    return facts[randomNum] # returns a random fact as a string
 
-def findJiraProject(text, channel):
-    if any(word in text.lower() for word in JIRA_PROJECT_LIST): 
-        print("JIRA Project spotted!")
-        jiraProjectTargeted = False
-        while jiraProjectTargeted == False:
-            for member in JIRA_PROJECT_LIST:
-                if member in text.lower():
-                    if member == "test":
-                        print("Project is " + member.upper() + ", ignoring.")
-                        jiraProjectTargeted = True
-                    else:    
-                        print("Project is " + member.upper())
-                        jiraProjectTargeted = True
-                        print("Word found at " + str(text.find(member)))
-                        jiraIssues = re.findall("(\w+-\d+)", text)
-                        print(jiraIssues)
-            if jiraIssues:
-                i = 0
-                while i < len(jiraIssues):
-                    slack_client.api_call("chat.postMessage",channel=channel, text="Jira issue found! https://jira.belkin.com/browse/"+jiraIssues[i])
-                    i += 1 
-
-    return None
+def findJiraProject(text, channel): # finds Jira project in string. This should only be reading incoming messages from Slack
+    # I feel like something in here is redundant, but it works as is
+    try:
+        if any(word in text.lower() for word in JIRA_PROJECT_LIST): # for each word in the message and if that word in the message is a Jira project
+            print("JIRA Project spotted!")
+            jiraProjectTargeted = False # for while loop
+            while jiraProjectTargeted == False: # while jira project is not targeted...
+                for member in JIRA_PROJECT_LIST: # for each project in the Jira project list...
+                    if member in text.lower(): # if the project is in the message 
+                        if member == "test": # if the project is 'test'
+                            # ignore the the word
+                            print("Project is " + member.upper() + ", ignoring.")
+                            jiraProjectTargeted = True # end while loop
+                        else: # otherwise...
+                            print("Project is " + member.upper())
+                            jiraProjectTargeted = True # end while loop
+                            print("Word found at " + str(text.find(member)))
+                            jiraIssues = re.findall("(\w+-\d+)", text) # get all the issues in the message (using regEx)
+                            print(jiraIssues)
+                if jiraIssues: # if Jira issure are found...
+                    i = 0 # for iteration
+                    while i < len(jiraIssues): # while not every issue is posted...
+                        slack_client.api_call("chat.postMessage",channel=channel, text="Jira issue found! https://jira.belkin.com/browse/"+jiraIssues[i]) #print the issue
+                        i += 1 # move on to the next one
+    except: # if anything goes wrong...
+        return None # return nothing
 
 def parse_bot_commands(slack_events):
     """
         Parses a list of events coming from the Slack RTM API to find bot commands.
         If a bot command is found, this function returns a tuple of command and channel.
-        If its not found, then this function returns None, None.
+        If its not found, then this function returns None, None, None.
     """
 
-    for event in slack_events:
-        if event["type"] == "message" and not "subtype" in event:
-            # if bot is mentioned 
-            user_id, message, ts = parse_direct_mention(event["text"])
-            if user_id == SnappsBot_id:
+    for event in slack_events: # for every event that happens in slack...
+        if event["type"] == "message" and not "subtype" in event: # if the event is a message event...
+            user_id, message, ts = parse_direct_mention(event["text"]) # get message information via parse_direct_mention()
+            if user_id == SnappsBot_id:  # if bot is mentioned ...
                 print("I was mentioned by "+ event["user"] +" in channel " + event["channel"]) # for logging
                 print("Full message: " + event["text"]) # For logging
-                if event["text"] == ("<@"+user_id+">"):
-                    slack_client.api_call("chat.postMessage",channel=event["channel"], text=WhatIsSnappsBot())
-                else:
-                    return message, event["channel"], event["ts"]
-            elif str(user_id) not in event["text"]: 
-                #search for Jira Project
-                findJiraProject(event["text"],event["channel"])
-            # if congrats is said
-            elif event["text"] == "congrats" or event["text"] == "congratulations": # in the event that a message is sent and it say "congrats"
-                with open('partyDog.jpg', 'rb') as f:
-                    slack_client.api_call("files.upload", # uses slack's files.upload api
+                if event["text"] == ("<@"+user_id+">"): # if a user just mentions the bot...
+                    slack_client.api_call("chat.postMessage",channel=event["channel"], text=WhatIsSnappsBot()) # post response of WhatIsSnappsBot() to channel
+                else: 
+                    return message, event["channel"], event["ts"] # contninue
+            elif str(user_id) not in event["text"]: # if bot is not mentioned...
+                findJiraProject(event["text"],event["channel"]) # search for Jira project in message
+            elif event["text"] == "congrats" or event["text"] == "congratulations": # if the message only says "congrats" or another permutation...
+                with open('partyDog.jpg', 'rb') as f: # get the partyDog.jpg image as read bytes
+                    slack_client.api_call("files.upload", # uses slack's files.upload API to send the picture
                     channels=event["channel"],
                     filename='partyDog.jpg',
                     title='Party time!',
                     initial_comment='Good job!',
                     file=io.BytesIO(f.read())
                     )
-                return None, None, None
-    return None, None, None
+                return None, None, None # don't send anything
+    return None, None, None # don't send anything
 
 def WhatIsSnappsBot():
-    return "Oh hey, that's me!"
+    # This should return a small summary of what SnappsBot is
+    return "Oh hey, that's me!" 
 
 def parse_direct_mention(message_text):
     """
@@ -141,7 +144,7 @@ def parse_direct_mention(message_text):
         and returns the user ID which was mentioned. If there is no direct mention, returns None
     """
     matches = re.search(MENTION_REGEX, message_text)
-    # the first group contains the username, the second group contains the remaining message
+    # the first group contains the username, the second group contains the remaining message, the third group contains the message thread (which is unused here)
     return (matches.group(1), matches.group(2).strip(), None) if matches else (None, None, None)
 
 def handle_command(command, channel, ts):
@@ -231,26 +234,26 @@ def handle_command(command, channel, ts):
     if command.lower().startswith("jira"):
         temp = command.lstrip(command[0:5]) # removes "jira " from the front of the command
         # Get project key link command
-        if temp.startswith("sum"): 
+        if temp.startswith("sum"): # if the next part of the command is "sum"...
             try:
                 temp = temp.lstrip(temp[0:4]) # removes "sum " from the front of the command
                 response = temp
-                S = requests.Session()
+                S = requests.Session() # forms a request to the Jira API
                 URL = "https://jira.belkin.com/rest/api/2/issue/"+str(temp)+""
                 HEADER = {
                 'Authorization':JiraBotKey,
                 'Content-Type':"application/json", 
                 }
-                R = S.get(url=URL, headers=HEADER)
-                DATA = R.json()
-                if 'priority' not in DATA['fields']:
-                    DATA['fields']['priority'] = None
-                if DATA['fields']['priority'] == None:
-                    DATA['fields']['priority']= {'name':"N/A"}
-                if DATA['fields']['assignee'] == None:
-                    DATA['fields']['assignee']= {'name':"Unassigned",'emailAddress':'N/A'}
+                R = S.get(url=URL, headers=HEADER) # sends GET request
+                DATA = R.json() # converts response to json
+                if 'priority' not in DATA['fields']: # if the priority tag is not found...
+                    DATA['fields']['priority'] = None # add it
+                if DATA['fields']['priority'] == None: # if the priority tag is empty...
+                    DATA['fields']['priority']= {'name':"N/A"} # set it to "N/A"
+                if DATA['fields']['assignee'] == None: # if the assignee tag is empty...
+                    DATA['fields']['assignee']= {'name':"Unassigned",'emailAddress':'N/A'} # say it is unassigned
                 if DATA:
-                    slack_client.api_call(
+                    slack_client.api_call( # post message to slack
                         "chat.postMessage",
                         channel=channel,
                         text="Here we go.",
@@ -259,7 +262,7 @@ def handle_command(command, channel, ts):
                                 "type": "section",
                                 "text": { 
                                     "type": "mrkdwn",
-                                    "text": "Here's a summary of "+DATA['key']+"."
+                                    "text": "Here's a summary of "+DATA['key']+"." # gets the issue key
                                 }
                             },
                             {
@@ -269,7 +272,7 @@ def handle_command(command, channel, ts):
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": "*<https://jira.belkin.com/browse/"+DATA['key']+"|"+DATA['key']+">*\n"+DATA['fields']['summary']+""
+                                    "text": "*<https://jira.belkin.com/browse/"+DATA['key']+"|"+DATA['key']+">*\n"+DATA['fields']['summary']+"" # gets the issue url and name
                                 }
                             },
                             {
@@ -277,27 +280,27 @@ def handle_command(command, channel, ts):
                                 "fields": [
                                     {
                                         "type": "mrkdwn",
-                                        "text": "*Status:*\n"+DATA['fields']['status']['name']+""
+                                        "text": "*Status:*\n"+DATA['fields']['status']['name']+"" # gets the issue status
                                     },
                                     {
                                         "type": "mrkdwn",
-                                        "text": "*Type:*\n"+DATA['fields']['issuetype']['name']+""
+                                        "text": "*Type:*\n"+DATA['fields']['issuetype']['name']+"" # gets the issue type
                                     },                                
                                     {
                                         "type": "mrkdwn",
-                                        "text": "*Assignee:*\n"+DATA['fields']['assignee']['name']+" <mailto:"+DATA['fields']['assignee']['emailAddress']+"|[✉]>"
+                                        "text": "*Assignee:*\n"+DATA['fields']['assignee']['name']+" <mailto:"+DATA['fields']['assignee']['emailAddress']+"|[✉]>" # gets the issue assignee
                                     },
                                     {
                                         "type": "mrkdwn",
-                                        "text": "*Reporter:*\n"+DATA['fields']['reporter']['name']+" <mailto:"+DATA['fields']['reporter']['emailAddress']+"|[✉]>"
+                                        "text": "*Reporter:*\n"+DATA['fields']['reporter']['name']+" <mailto:"+DATA['fields']['reporter']['emailAddress']+"|[✉]>" # gets the issue reported
                                     },                                    
                                     {
                                         "type": "mrkdwn",
-                                        "text": "*Priority:*\n"+DATA['fields']['priority']['name']+""
+                                        "text": "*Priority:*\n"+DATA['fields']['priority']['name']+"" # gets the issue priority
                                     },                                    
                                     {
                                         "type": "mrkdwn",
-                                        "text": "*Component(s):*\n<"+DATA['fields']['components'][0]['self']+"|"+DATA['fields']['components'][0]['name']+">"
+                                        "text": "*Component(s):*\n<"+DATA['fields']['components'][0]['self']+"|"+DATA['fields']['components'][0]['name']+">" # gets the issue components
                                     }
                                 ]
                             },
@@ -308,29 +311,29 @@ def handle_command(command, channel, ts):
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": "<https://jira.belkin.com/browse/"+DATA['key']+"|[Link to Issue]>"
+                                    "text": "<https://jira.belkin.com/browse/"+DATA['key']+"|[Link to Issue]>" # gets the issue url again
                                 }
                             }
                         ]
                     )
-                    response = "I hope that helps!"
-            except ValueError:
+                    response = "I hope that helps!" # lets the user know the command is done
+            except ValueError: # if the command couldn't be completed
                 print ("Error with command, the issue probably wasn't found")
-                response = "I couldn't find anything, sorry!"
-        if temp.startswith("search"):
+                response = "I couldn't find anything, sorry!" # lets the user know there was an error
+        if temp.startswith("search"): # if the next part of the command is search...
             temp = command.lstrip(temp[0:6]) # removes "search " from the front of the temp
-            terms = re.findall("([A-z]\w+\s*=\s*[A-z]\w+(?:\.\w+)*)", temp)
-            query = ""
-            i = 0
-            for x in terms:
+            terms = re.findall("([A-z]\w+\s*=\s*[A-z]\w+(?:\.\w+)*)", temp) # gets all the arguments from the message using regEx
+            query = "" # blank query to fill
+            i = 0 # for iteration
+            for x in terms: # for each term...
                 i += 1
-                query += x
-                if i < len(terms):
-                    query += " AND "
-                print(query)
-            query = query.replace(" ", "%20")
-            query = query.replace("=", "%3D")
-            S = requests.Session()
+                query += x # adds term to query
+                if i < len(terms): # if i is less than to total number of terms...
+                    query += " AND " # add "AND" to the query
+                print(query) # for debugging
+            query = query.replace(" ", "%20") # replace spaces with url friendly code
+            query = query.replace("=", "%3D") # replace = with url friendly code
+            S = requests.Session() # set up request for Jira search API
             URL = "https://jira.belkin.com/rest/api/2/search/?jql=" +query+ "&startAt=0&maxResults=10&fields=summary"
             HEADER = {
                 'Authorization':JiraBotKey,
@@ -351,87 +354,89 @@ def handle_command(command, channel, ts):
                             "elements": [
                                 {
                                     "type": "mrkdwn",
-                                    "text": "*Total Results:* " + str(DATA['total']) + " | *Showing:* " + str(DATA['maxResults']) +""
+                                    "text": "*Total Results:* " + str(DATA['total']) + " | *Showing:* " + str(DATA['maxResults']) +"" # gets the total number of results found
                                 }
                             ]
                         }
                     ]
-            total = DATA['maxResults']
-            if total > DATA['total']:
-                total = DATA['total']
-            for i in range(total):
-                BLOCKS.append({
+            total = DATA['maxResults'] # total is how many issue blocks is posted
+            if total > DATA['total']: # if total is less than total of issues found...
+                total = DATA['total'] # make the total = the total results found
+            for i in range(total): # for every number before the total
+                BLOCKS.append({ # add a divider
                                 "type": "divider"
                             })
-                BLOCKS.append({
+                BLOCKS.append({ # add a search result
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": "<https://jira.belkin.com/browse/" + DATA['issues'][i]['key'] + "|" + DATA['issues'][i]['key'] + ">\n" + DATA['issues'][i]['fields']['summary']+""
+                                    "text": "<https://jira.belkin.com/browse/" + DATA['issues'][i]['key'] + "|" + DATA['issues'][i]['key'] + ">\n" + DATA['issues'][i]['fields']['summary']+"" # gets issue key and its url
                                 }
                             })
-            slack_client.api_call(
+            slack_client.api_call( # post all the results as a reply to the message
                 "chat.postMessage",
                 channel=channel,
                 thread_ts =ts,
                 text="Search complete!",
                 blocks=BLOCKS
             )
-            print(BLOCKS)
-            response = "Done! Check the replies."
+            response = "Done! Check the replies." # lets the user know the bot is done
     # Debug Commands
     if command.lower().startswith("debug"):
             # Uptime command
-        if "uptime" in command: 
-            response = "I've been up for about " + str(round(time.time() - startTime)) + " seconds!" # Subtracts current time by start time.
+        if "uptime" in command: # if uptime is found in the command
+            response = "I've been up for about " + str(round(time.time() - startTime)) + " seconds!" # Subtracts current time by start time and prints it
     # Splunk Commands
     if command.lower().startswith("splunk"):
             # Uptime command
         if "search" in command: 
             try:
-                S = requests.Session()
+                S = requests.Session() # form a request to the Splunk API
                 URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"
                 HEADERS = {
                 "Content-Type": "application/x-www-form-urlencoded",
-                "Authorization": "Splunk "+getSplunkSession(),
+                "Authorization": "Splunk "+getSplunkSession(), # gets auth id
                 }
                 PAYLOAD = {
-                'search':'| inputlookup bikeshare.csv',
+                'search':'| inputlookup bikeshare.csv', # gets the bikeshare.csv from splunck
                 }
                 PARAMS = {
-                'output_mode':"json",
+                'output_mode':"json", # ask for response to be a json
                 }
-                R = S.post(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False)
-                DATA = R.json()
+                R = S.post(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False) # create the search via post
+                # DATA will post the search and return the search id
+
+                DATA = R.json() # convert the response to json
                 try:
                     maxResult = 5
                     page = 1
                     S = requests.Session()
-                    URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"+str(DATA['sid'])
+                    URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"+str(DATA['sid']) # gets information search id
                     HEADERS = {
-                    "Authorization": "Splunk "+getSplunkSession(),
+                    "Authorization": "Splunk "+getSplunkSession(), # gets auth id
                     }
                     PARAMS = {
-                    'output_mode':"json",
+                    'output_mode':"json", # ask for response to be a json
                     }
-
-                    R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
-                    DATA2 = R.json()
-                    while DATA2['entry'][0]['content']['dispatchState'] != "DONE":
-                        time.sleep(1)
-                        R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
-                        DATA2 = R.json()
+                    R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False) # gets information about the search
+                    # DATA2 will have the information about the search
+                    DATA2 = R.json() # convert the response to json
+                    while DATA2['entry'][0]['content']['dispatchState'] != "DONE": # while the search is not complete
+                        time.sleep(1) # wait 1 second
+                        R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False) # check search status
+                        DATA2 = R.json() # convert the response to json
                     try:
-                        S = requests.Session()
+                        S = requests.Session() 
                         URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"+str(DATA['sid'])+"/results/"
                         HEADERS = {
-                        "Authorization": "Splunk "+getSplunkSession(),
+                        "Authorization": "Splunk "+getSplunkSession(), # gets auth id
                         }
                         PARAMS = {
-                        'output_mode':"json",
+                        'output_mode':"json", # ask for response to be a json
                         }
                         R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
                         DATA3 = R.json()
+                        # DATA3 will post the search and return the search id
                         BLOCKS =[
                             {
                             "type": "section",
