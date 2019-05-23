@@ -1,6 +1,8 @@
 import io
+import asyncio
 import os
 import time
+import datetime
 import re
 import requests
 import random
@@ -8,8 +10,12 @@ import readline
 import csv
 import urllib.request
 import urllib3
+import _thread
+
 from PIL import Image
 from slackclient import SlackClient
+from multiprocessing import Process
+from threading import Thread
 
 # KEYS AND PASSWORDS
 SlackBotKey = open("keys/SlackBotKey.txt", "r").read()
@@ -64,6 +70,105 @@ def getSplunkSession(): # gets an authorization key from Splunk
     except: # if it can't get to the API...
         print("Can't connect to Splunk; related commands disabled.")
         return "N/A"
+
+def getCloudStatus(): 
+    print("Fetching current cloud status...")
+    try:  # try to reach the splunk login API
+        S = requests.Session() # form a request to the Splunk API
+        URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"
+        HEADERS = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": "Splunk "+getSplunkSession(), # gets auth id
+        }
+        PAYLOAD = {
+        'search':'| inputlookup cloudUnavailableMonitor.csv', # gets the bikeshare.csv from splunck
+        }
+        PARAMS = {
+        'output_mode':"json", # ask for response to be a json
+        }
+        R = S.post(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False) # create the search via post
+        # DATA will post the search and return the search id
+        DATA = R.json() # convert the response to json
+        try:
+            S = requests.Session()
+            URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"+str(DATA['sid']) # gets information search id
+            HEADERS = {
+            "Authorization": "Splunk "+getSplunkSession(), # gets auth id
+            }
+            PARAMS = {
+            'output_mode':"json", # ask for response to be a json
+            }
+            R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False) # gets information about the search
+            # DATA2 will have the information about the search
+            DATA2 = R.json() # convert the response to json
+            while DATA2['entry'][0]['content']['dispatchState'] != "DONE": # while the search is not complete
+                time.sleep(1) # wait 1 second
+                R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False) # check search status
+                DATA2 = R.json() # convert the response to json
+            try:
+                S = requests.Session() 
+                URL = "https://belkin.splunkcloud.com:8089/services/search/jobs/"+str(DATA['sid'])+"/results/"
+                HEADERS = {
+                "Authorization": "Splunk "+getSplunkSession(), # gets auth id
+                }
+                PARAMS = {
+                'output_mode':"json", # ask for response to be a json
+                }
+                R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
+                DATA3 = R.json()
+                print(DATA3)
+                BLOCKS=[
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "Cloud Status Report!"
+                            }
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Status:* " + str(DATA3['results'][0]['alert3']) 
+                                }
+                            ]
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Users:* " + str(DATA3['results'][0]['users']) 
+                                }
+                            ]
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*User errors:* " + str(DATA3['results'][0]['cloudErrorUsers']) 
+                                }
+                            ]
+                        }
+                    ]
+                slack_client.api_call( # post all the results as a reply to the message
+                "chat.postMessage",
+                channel="CH0RMF9C6",
+                blocks=BLOCKS
+                )
+                # DATA3 will post the search and return the search id
+            except: # if it can't get to the API...
+                print("Can't connect to Splunk; related commands disabled.")
+                return "N/A"
+        except: # if it can't get to the API...
+            print("Can't connect to Splunk; related commands disabled.")
+            return "N/A"
+    except: # if it can't get to the API...
+        print("Can't connect to Splunk; related commands disabled.")
+        return "N/A"
+    # time.sleep(1800) # wait 30 min
 
 def dogFacts(): # gets a random line from 'dogFacts.txt'
     dogFacts = urllib.request.urlopen("https://raw.githubusercontent.com/Snappsu/SnappsBot/master/dogFacts.txt") # gets the list of dog facts (hosted on GitHub to get the most recent facts)
@@ -405,7 +510,6 @@ def handle_command(command, channel, ts):
                 }
                 R = S.post(url=URL, params=PARAMS, data=PAYLOAD, headers=HEADERS, verify=False) # create the search via post
                 # DATA will post the search and return the search id
-
                 DATA = R.json() # convert the response to json
                 try:
                     maxResult = 5
@@ -526,17 +630,42 @@ def handle_command(command, channel, ts):
         unfurl_media = "true",
     )
 
-startTime = time.time()
+# Async Testing
+CloudeUpdateQueue = 0
+def periodic(x):
+    while True:
+        getCloudStatus()
+        time.sleep(x)
 
+    return None
+
+def getCommand():
+    command, channel, ts = parse_bot_commands(slack_client.rtm_read())
+    if command:
+        handle_command(command, channel, ts)
+    time.sleep(RTM_READ_DELAY)
+    return None
+
+def start_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+new_loop = asyncio.new_event_loop()
+t = Thread(target=start_loop, args=(new_loop,))
+t.start()    
+
+# Start of Program
+
+
+startTime = time.time()
 if __name__ == "__main__": 
     if slack_client.rtm_connect(with_team_state=False): # checks if bot connects to slack
         print("SnappsBot connected and running!")
         # Read bot's user ID by calling Web API method `auth.test`
         SnappsBot_id = slack_client.api_call("auth.test")["user_id"]
-        while True: # while true loop, keeps bot running
-            command, channel, ts = parse_bot_commands(slack_client.rtm_read())
-            if command:
-                handle_command(command, channel, ts)
-            time.sleep(RTM_READ_DELAY)
+        new_loop.call_soon_threadsafe(periodic, 3000)
+
+        while True:
+            getCommand()
     else:
         print("Connection failed. Exception traceback printed above.")
