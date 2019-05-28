@@ -117,48 +117,31 @@ def getCloudStatus():
                 R = S.get(url=URL, params=PARAMS, headers=HEADERS, verify=False)
                 DATA3 = R.json()
                 print(DATA3)
-                BLOCKS=[
-                        {
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": "Cloud Status Report!"
+                if DATA3['results'][0]['alert3'] == "1":
+                    BLOCKS=[
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": "@channel This is also a test!"
+                                }
+                            },
+                            {
+                                "type": "context",
+                                "elements": [
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": "*Status:* " + str(DATA3['results'][0]['alert3']) 
+                                    }
+                                ]
                             }
-                        },
-                        {
-                            "type": "context",
-                            "elements": [
-                                {
-                                    "type": "mrkdwn",
-                                    "text": "*Status:* " + str(DATA3['results'][0]['alert3']) 
-                                }
-                            ]
-                        },
-                        {
-                            "type": "context",
-                            "elements": [
-                                {
-                                    "type": "mrkdwn",
-                                    "text": "*Users:* " + str(DATA3['results'][0]['users']) 
-                                }
-                            ]
-                        },
-                        {
-                            "type": "context",
-                            "elements": [
-                                {
-                                    "type": "mrkdwn",
-                                    "text": "*User errors:* " + str(DATA3['results'][0]['cloudErrorUsers']) 
-                                }
-                            ]
-                        }
-                    ]
-                slack_client.api_call( # post all the results as a reply to the message
-                "chat.postMessage",
-                channel="CH0RMF9C6",
-                blocks=BLOCKS
-                )
-                # DATA3 will post the search and return the search id
+                        ]
+                    slack_client.api_call( # post all the results as a reply to the message
+                    "chat.postMessage",
+                    channel="CH0RMF9C6",
+                    link_names=1,
+                    blocks=BLOCKS
+                    )
             except: # if it can't get to the API...
                 print("Can't connect to Splunk; related commands disabled.")
                 return "N/A"
@@ -227,13 +210,13 @@ def parse_bot_commands(slack_events):
                     return message, event["channel"], event["ts"] # contninue
             elif str(user_id) not in event["text"]: # if bot is not mentioned...
                 findJiraProject(event["text"],event["channel"]) # search for Jira project in message
-            elif event["text"] == "congrats" or event["text"] == "congratulations": # if the message only says "congrats" or another permutation...
+            if event["text"] == "congrats" or event["text"] == "congratulations": # if the message only says "congrats" or another permutation...
                 with open('partyDog.jpg', 'rb') as f: # get the partyDog.jpg image as read bytes
                     slack_client.api_call("files.upload", # uses slack's files.upload API to send the picture
                     channels=event["channel"],
                     filename='partyDog.jpg',
                     title='Party time!',
-                    initial_comment='Good job!',
+                    initial_comment='Woof, there it is!',
                     file=io.BytesIO(f.read())
                     )
                 return None, None, None # don't send anything
@@ -650,12 +633,11 @@ def start_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
+# Start of Program
+
 new_loop = asyncio.new_event_loop()
 t = Thread(target=start_loop, args=(new_loop,))
 t.start()    
-
-# Start of Program
-
 
 startTime = time.time()
 if __name__ == "__main__": 
@@ -663,7 +645,7 @@ if __name__ == "__main__":
         print("SnappsBot connected and running!")
         # Read bot's user ID by calling Web API method `auth.test`
         SnappsBot_id = slack_client.api_call("auth.test")["user_id"]
-        new_loop.call_soon_threadsafe(periodic, 3000)
+        new_loop.call_soon_threadsafe(periodic, 1800)
 
         while True:
             getCommand()
